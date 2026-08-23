@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-The RAG Stack — Streamlit study app
-Interview-prep companion for the RAG Stack cheat sheet (13 topic sections,
-a rapid-fire Q&A round, and a numbers-to-memorize sheet).
+AI Interview Prep Hub — Streamlit study app
+Covers two interview-prep cheat sheets in one app: The RAG Stack, and
+Prompt Engineering. Pick a subject in the sidebar; everything below it
+(navigation, search, study tools) scopes to that subject.
 
 Run with:
     pip install -r requirements.txt
@@ -13,24 +14,52 @@ import os
 import pandas as pd
 import streamlit as st
 
-from data import SECTIONS, RAPID_FIRE, NUMBERS
+import data_rag
+import data_pe
 
 # ---------------------------------------------------------------------------
 # PAGE CONFIG
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="The RAG Stack",
-    page_icon="⚛️",
+    page_title="AI Interview Prep Hub",
+    page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-SECTION_BY_ID = {s["id"]: s for s in SECTIONS}
-PAGE_IDS = [s["id"] for s in SECTIONS] + ["__rapidfire__", "__numbers__"]
+COURSES = {
+    "rag": {
+        "key": "rag",
+        "label": "🧩 The RAG Stack",
+        "short_label": "RAG Stack",
+        "subtitle": "Interview-prep reference — tokenization → generation",
+        "icon": "⚛️",
+        "sections": data_rag.SECTIONS,
+        "rapid_fire": data_rag.RAPID_FIRE,
+        "numbers": data_rag.NUMBERS,
+        "xlsx_file": "The_RAG_Stack_Cheat_Sheet.xlsx",
+    },
+    "pe": {
+        "key": "pe",
+        "label": "🗣️ Prompt Engineering",
+        "short_label": "Prompt Engineering",
+        "subtitle": "Interview-prep reference — instructions → reasoning → guardrails",
+        "icon": "🗣️",
+        "sections": data_pe.SECTIONS,
+        "rapid_fire": data_pe.RAPID_FIRE,
+        "numbers": data_pe.NUMBERS,
+        "xlsx_file": "Prompt_Engineering_Cheat_Sheet.xlsx",
+    },
+}
+
+AUTHOR_LINE = (
+    "Dr. Akkem Yaganteeswarudu, Ph.D. NIT Silchar &nbsp;·&nbsp; "
+    "Senior Data Scientist &nbsp;·&nbsp; Mobile: 8296655882"
+)
 
 # ---------------------------------------------------------------------------
-# LIGHT STYLING (kept minimal — Streamlit's own theme does most of the work)
+# STYLING
 # ---------------------------------------------------------------------------
 
 st.markdown(
@@ -89,6 +118,17 @@ st.markdown(
         text-align: center;
         line-height: 1.6;
     }
+    .subject-badge {
+        display: inline-block;
+        font-family: "Source Code Pro", monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(60, 110, 116, 0.15);
+        margin-bottom: 0.6rem;
+    }
     div[data-testid="stSidebarNav"] { display: none; }
     </style>
     """,
@@ -99,10 +139,26 @@ st.markdown(
 # SESSION STATE
 # ---------------------------------------------------------------------------
 
-if "page" not in st.session_state:
-    st.session_state.page = SECTIONS[0]["id"]
+if "course" not in st.session_state:
+    st.session_state.course = "rag"
 if "reveal_answers" not in st.session_state:
     st.session_state.reveal_answers = False
+
+COURSE = COURSES[st.session_state.course]
+SECTIONS = COURSE["sections"]
+RAPID_FIRE = COURSE["rapid_fire"]
+NUMBERS = COURSE["numbers"]
+SECTION_BY_ID = {s["id"]: s for s in SECTIONS}
+
+# Defensive fallback: if "page" is unset, or holds an id that doesn't belong to the
+# current course (e.g. stale state from before a course switch), snap to that
+# course's first section rather than raising a KeyError further down.
+_page_is_valid = st.session_state.get("page") in SECTION_BY_ID or st.session_state.get("page") in (
+    "__rapidfire__",
+    "__numbers__",
+)
+if not _page_is_valid:
+    st.session_state.page = SECTIONS[0]["id"]
 
 
 def go_to(page_id: str):
@@ -114,17 +170,37 @@ def go_to_and_clear_search(page_id: str):
     st.session_state.search_query = ""
 
 
+def switch_course(course_key: str):
+    st.session_state.course = course_key
+    st.session_state.page = COURSES[course_key]["sections"][0]["id"]
+    st.session_state.search_query = ""
+
+
 # ---------------------------------------------------------------------------
 # SIDEBAR
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.markdown("### ⚛️ The RAG Stack")
-    st.caption("Interview-prep reference — tokenization → generation")
+    st.markdown("### 📚 AI Interview Prep Hub")
+    st.caption("Two cheat sheets, one place to cram.")
+
+    st.markdown("**Choose your subject**")
+    for key, c in COURSES.items():
+        st.button(
+            c["label"],
+            key=f"course_{key}",
+            on_click=switch_course,
+            args=(key,),
+            use_container_width=True,
+            type="primary" if st.session_state.course == key else "secondary",
+        )
+
+    st.markdown(f"<span class='subject-badge'>{COURSE['icon']} {COURSE['short_label']}</span>", unsafe_allow_html=True)
+    st.caption(COURSE["subtitle"])
 
     query = st.text_input(
-        "🔎 Search all sections",
-        placeholder="e.g. HNSW, BM25, chunking…",
+        f"🔎 Search {COURSE['short_label']}",
+        placeholder="type a keyword…",
         key="search_query",
     )
 
@@ -134,7 +210,7 @@ with st.sidebar:
         is_active = (not query) and st.session_state.page == s["id"]
         st.button(
             label,
-            key=f"nav_{s['id']}",
+            key=f"nav_{COURSE['key']}_{s['id']}",
             on_click=go_to_and_clear_search,
             args=(s["id"],),
             use_container_width=True,
@@ -144,7 +220,7 @@ with st.sidebar:
     st.markdown("**Study tools**")
     st.button(
         "🎯  Rapid-fire Q&A",
-        key="nav_rapidfire",
+        key=f"nav_{COURSE['key']}_rapidfire",
         on_click=go_to_and_clear_search,
         args=("__rapidfire__",),
         use_container_width=True,
@@ -152,7 +228,7 @@ with st.sidebar:
     )
     st.button(
         "🔢  Numbers to memorize",
-        key="nav_numbers",
+        key=f"nav_{COURSE['key']}_numbers",
         on_click=go_to_and_clear_search,
         args=("__numbers__",),
         use_container_width=True,
@@ -162,25 +238,21 @@ with st.sidebar:
     st.markdown("---")
     st.toggle("Reveal Q&A answers by default", key="reveal_answers")
 
-    xlsx_path = os.path.join(os.path.dirname(__file__), "The_RAG_Stack_Cheat_Sheet.xlsx")
+    xlsx_path = os.path.join(os.path.dirname(__file__), COURSE["xlsx_file"])
     if os.path.exists(xlsx_path):
         with open(xlsx_path, "rb") as f:
             st.download_button(
-                "⬇️  Download as Excel",
+                f"⬇️  Download {COURSE['short_label']} (Excel)",
                 data=f.read(),
-                file_name="The_RAG_Stack_Cheat_Sheet.xlsx",
+                file_name=COURSE["xlsx_file"],
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
+                key=f"dl_{COURSE['key']}",
             )
 
 # ---------------------------------------------------------------------------
 # CONTENT RENDERERS
 # ---------------------------------------------------------------------------
-
-AUTHOR_LINE = (
-    "Dr. Akkem Yaganteeswarudu, Ph.D. NIT Silchar &nbsp;·&nbsp; "
-    "Senior Data Scientist &nbsp;·&nbsp; Mobile: 8296655882"
-)
 
 
 def render_header(eyebrow, title_html):
@@ -284,7 +356,7 @@ def render_section(section):
 
 
 def render_rapid_fire():
-    render_header("Speed round", "🎯 Rapid-fire Q&A")
+    render_header("Speed round", f"🎯 {COURSE['short_label']} — Rapid-fire Q&A")
     st.markdown(
         "<div class='rag-core'>Read the question, say the answer out loud, then check.</div>",
         unsafe_allow_html=True,
@@ -299,14 +371,14 @@ def render_rapid_fire():
 
 
 def render_numbers():
-    render_header("Muscle memory", "🔢 Numbers worth memorizing")
+    render_header("Muscle memory", f"🔢 {COURSE['short_label']} — Numbers Worth Memorizing")
     df = pd.DataFrame(NUMBERS, columns=["Metric", "Value"])
     st.dataframe(df, hide_index=True, use_container_width=True, height=38 * len(df) + 40)
     render_footer()
 
 
 def render_search(query):
-    render_header("Search results", f"🔎 Results for “{query}”")
+    render_header("Search results", f"🔎 Results for “{query}” in {COURSE['short_label']}")
     q_lower = query.lower()
     found_any = False
 
@@ -335,7 +407,7 @@ def render_search(query):
                 st.markdown(f"<div class='rag-fact'>[{kind}] {prefix}{text}</div>", unsafe_allow_html=True)
             st.button(
                 "Open full section →",
-                key=f"open_{s['id']}",
+                key=f"open_{COURSE['key']}_{s['id']}",
                 on_click=go_to_and_clear_search,
                 args=(s["id"],),
             )
@@ -347,7 +419,7 @@ def render_search(query):
             st.markdown(f"<div class='rag-fact'>[Rapid-fire] **{q}** — {a}</div>", unsafe_allow_html=True)
 
     if not found_any:
-        st.info("No matches. Try a shorter or different keyword.")
+        st.info(f"No matches in {COURSE['short_label']}. Try a shorter keyword, or switch subjects in the sidebar.")
 
     render_footer()
 
